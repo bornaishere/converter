@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMAP to UEFN Converter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      background-color: #1e293b;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      max-width: 600px;
+      width: 100%;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      color: #38bdf8;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .file-input-group {
+      margin: 20px 0;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .custom-file-upload {
+      display: inline-block;
+      padding: 10px 20px;
+      cursor: pointer;
+      background-color: #334155;
+      color: #f8fafc;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      transition: background 0.2s;
+    }
+    .custom-file-upload:hover {
+      background-color: #475569;
+    }
+    .btn {
+      background-color: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background-color: #0369a1;
+    }
+    .btn:disabled {
+      background-color: #475569;
+      cursor: not-allowed;
+    }
+    textarea {
+      width: 100%;
+      height: 180px;
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      color: #38bdf8;
+      border-radius: 6px;
+      margin-top: 15px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-family: monospace;
+      font-size: 0.85rem;
+      resize: vertical;
+    }
+    .action-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .btn-secondary {
+      background-color: #334155;
+      flex: 1;
+    }
+    .btn-secondary:hover {
+      background-color: #475569;
+    }
+    .disclaimer {
+      font-size: 0.8rem;
+      color: #f59e0b;
+      margin-top: 20px;
+      border-left: 3px solid #f59e0b;
+      padding-left: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>UMAP to UEFN Converter</h1>
+  <p>Select an exported JSON file (from FModel/UMAP export) to convert its map objects into UEFN T3D format.</p>
+
+  <div class="file-input-group">
+    <label for="fileInput" class="custom-file-upload">
+      📁 Choose .json File
+    </label>
+    <span id="fileName" style="margin-left: 10px; color: #94a3b8;">No file selected</span>
+    <input type="file" id="fileInput" accept=".json" />
+  </div>
+
+  <button class="btn" id="convertBtn" onclick="convertJsonToT3D()" disabled>Convert to UEFN Format</button>
+
+  <textarea id="output" placeholder="Converted T3D output will appear here..." readonly></textarea>
+
+  <div class="action-group">
+    <button class="btn btn-secondary" onclick="copyToClipboard()">Copy to Clipboard</button>
+    <button class="btn btn-secondary" onclick="downloadTxt()">Download .txt File</button>
+  </div>
+
+  <div class="disclaimer">
+    <strong>Note:</strong> Converted map actors will paste directly into your UEFN viewport. You may need to clean up unvalidated materials or missing meshes manually.
+  </div>
+</div>
+
+<script>
+  let loadedJsonData = null;
+
+  document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+      document.getElementById('fileName').textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          loadedJsonData = JSON.parse(event.target.result);
+          document.getElementById('convertBtn').disabled = false;
+        } catch (err) {
+          alert('Invalid JSON file!');
+          document.getElementById('convertBtn').disabled = true;
+        }
+      };
+      reader.readAsText(file);
+    }
+  });
+
+  function convertJsonToT3D() {
+    if (!loadedJsonData) return;
+
+    let t3dOutput = "Begin Map\n   Begin Level\n";
+    let count = 0;
+
+    // Standard loop over exported JSON objects array
+    const objects = Array.isArray(loadedJsonData) ? loadedJsonData : [loadedJsonData];
+
+    objects.forEach((obj, index) => {
+      if (!obj.Type || obj.Type === "Function" || !obj.Properties) return;
+
+      const actorType = obj.Type;
+      const actorName = `${actorType}_Converted_${index}`;
+
+      // Extract Transform Data
+      let loc = { X: 0, Y: 0, Z: 0 };
+      let rot = { Pitch: 0, Yaw: 0, Roll: 0 };
+      let scale = { X: 1, Y: 1, Z: 1 };
+
+      const rootComponent = obj.Properties.RootComponent || obj.Properties.StaticMeshComponent;
+      
+      if (obj.Properties.RelativeLocation) {
+        loc = obj.Properties.RelativeLocation;
+      }
+      if (obj.Properties.RelativeRotation) {
+        rot = obj.Properties.RelativeRotation;
+      }
+      if (obj.Properties.RelativeScale3D) {
+        scale = obj.Properties.RelativeScale3D;
+      }
+
+      // Build Unreal Engine T3D Actor Block
+      t3dOutput += `      Begin Actor Class=/Script/Engine.StaticMeshActor Name=${actorName} Archetype=/Script/Engine.StaticMeshActor'/Script/Engine.Default__StaticMeshActor'\n`;
+      t3dOutput += `         Begin Component Class=/Script/Engine.StaticMeshComponent Name="StaticMeshComponent0"\n`;
+      t3dOutput += `            RelativeLocation=(X=${loc.X || 0},Y=${loc.Y || 0},Z=${loc.Z || 0})\n`;
+      t3dOutput += `            RelativeRotation=(Pitch=${rot.Pitch || 0},Yaw=${rot.Yaw || 0},Roll=${rot.Roll || 0})\n`;
+      t3dOutput += `            RelativeScale3D=(X=${scale.X || 1},Y=${scale.Y || 1},Z=${scale.Z || 1})\n`;
+      t3dOutput += `         End Component\n`;
+      t3dOutput += `         RootComponent=StaticMeshComponent0\n`;
+      t3dOutput += `      End Actor\n`;
+      
+      count++;
+    });
+
+    t3dOutput += "   End Level\nEnd Map";
+
+    document.getElementById('output').value = t3dOutput;
+    alert(`Successfully converted ${count} objects to T3D format!`);
+  }
+
+  function copyToClipboard() {
+    const copyText = document.getElementById("output");
+    if (!copyText.value) return;
+    copyText.select();
+    navigator.clipboard.writeText(copyText.value);
+    alert("Copied to clipboard! You can now paste directly into UEFN viewport.");
+  }
+
+  function downloadTxt() {
+    const text = document.getElementById("output").value;
+    if (!text) return;
+    const blob = new Blob([text], { type: "text/plain" });
+    const anchor = document.createElement("a");
+    anchor.download = "converted_uefn_map.txt";
+    anchor.href = window.URL.createObjectURL(blob);
+    anchor.target = "_blank";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  }
+</script>
+
+</body>
+</html>
